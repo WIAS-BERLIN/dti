@@ -29,7 +29,7 @@ awssigmc(y, steps, mask = NULL, ncoils = 1, vext = c(1, 1), lambda = 20,
          h0 = 2, verbose = FALSE, sequence = FALSE, hadj = 1, q = 0.25, 
          qni = .8, method=c("VAR","MAD"))
 awslsigmc(y, steps, mask = NULL, ncoils = 1, vext = c(1, 1), lambda = 5, minni = 2, 
-         hsig = 5, sigma = NULL, family = c("Gauss","NCchi"), verbose = FALSE, u=NULL)
+         hsig = 5, sigma = NULL, family = c("NCchi"), verbose = FALSE, u=NULL)
 afsigmc(y, level = NULL, mask = NULL,  ncoils = 1,   vext = c( 1, 1),   
         h = 2, verbose = FALSE, hadj = 1, 
         method = c("modevn","modem1chi","bkm2chi","bkm1chi"))

@@ -13,8 +13,9 @@
  These methods estimate, in each voxel, the diffusion kurtosis tensor (and the diffusion tensor) and some scalar indices.
 }
 \usage{
-  \S4method{dkiTensor}{dtiData}(object, method=c("CLLS-QP", "CLLS-H", "ULLS") , 
-                   mc.cores=setCores(, reprt=FALSE), verbose=FALSE)
+  \S4method{dkiTensor}{dtiData}(object, method=c("CLLS-QP", "CLLS-H", "ULLS", "NLR", "QL") , 
+                   sigma = NULL, L = 1, mc.cores=setCores(, reprt=FALSE), verbose=FALSE, 
+                   control = list(NULL), rho = c(0, 0.1, 0.3, 1))
   \S4method{dkiIndices}{dkiTensor}(object, mc.cores=setCores(, reprt=FALSE),
                    verbose=FALSE)
 }
@@ -23,10 +24,14 @@
   \item{method}{Method for tensor estimation. May be \code{"CLLS-QP"} for a qudratic 
 programm solution for the constrained optimization (requires package quadprog), 
 \code{"CLLS-H"} for a heuristic approximation described in Tabesh et al. (2011), 
-or \code{"ULLS"} for an unconstrained linear least squares estimation. }
+or \code{"ULLS"} for an unconstrained linear least squares estimation. \code{"NLR"} refers to a non-linear regression estimation, and \code{"QL"} for a quasi-likelihood estimation.}
+   \item{sigma}{Standard deviation of the noise for \code{"QL"}.}
+   \item{L}{Number of effective coils for \code{"QL"}.}
    \item{mc.cores}{Number of cores to use. Defaults to number of threads specified for openMP, see documentation of package \pkg{awsMethods}. Not yet fully implemented for
   these methods.}
    \item{verbose}{Verbose mode.}
+   \item{control}{Control parameter for optimization for \code{"NLR"} and \code{"QL"}.}
+   \item{rho}{Control parameter for optimization for \code{"NLR"} and \code{"QL"}.}
 }
 \value{ 
   An object of class \code{"dkiTensor"} or \code{"dkiIndices"}.
