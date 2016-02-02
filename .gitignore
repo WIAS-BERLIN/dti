@@ -1,0 +1,10 @@
+.project
+.cproject
+.settings
+.Rproj.user
+.Rhistory
+.RData
+dti.Rproj
+src/*.o
+src/*.so
+src/*.dll
