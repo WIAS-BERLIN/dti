@@ -93,9 +93,9 @@ C
       integer i1,i2,i3,j1,j2,j3,j,k,thrednr
       real*8 fmedian
       external fmedian
-      thrednr = 1
 !$      integer omp_get_thread_num
 !$      external omp_get_thread_num
+      thrednr = 1
 C$OMP PARALLEL DEFAULT(SHARED)
 C$OMP& PRIVATE(i1,i2,i3,j1,j2,j3,j,k,thrednr)
 C$OMP DO SCHEDULE(GUIDED)
