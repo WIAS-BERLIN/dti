@@ -15,6 +15,7 @@ setGeneric("dkiTensor", function(object, ...) standardGeneric("dkiTensor"))
 
 setMethod("dkiTensor", "dtiData",
           function(object, method=c("CLLS-QP", "CLLS-H", "ULLS", "QL", "NLR") ,
+                   opt = c("optim", "optimx", "optimr", "optimrg", "optimParallel", "nlfb"),
                    sigma = NULL,
                    L = 1,
                    mask = NULL,
@@ -121,7 +122,10 @@ setMethod("dkiTensor", "dtiData",
 
 
             if (method == "QL") {
-
+              if(opt[1]=="optimParallel"){
+                 cl <- parallel::makeCluster(parallel::detectCores())
+                 parallel::setDefaultCluster(cl = cl)
+              }
               if(is.null(sigma)) stop("please provide sigma")
               if(length(sigma)==1) sigma <- array(sigma,ddim[1:3])
               if(any(sigma[mask]<1e-4)) stop("all sigma values in mask need to be positive")
@@ -133,6 +137,26 @@ setMethod("dkiTensor", "dtiData",
               ## Tabesh Eq. [10]
               A <- cbind(sweep(AD, 1, - bvalues, "*"),
                          sweep(AK, 1, bvalues^2/6, "*"))
+              if(opt[1]=="nlfb"){
+                    dkifun <- function(param, sii, sigma, A, L, CL){
+                      ng <- dim(A)[1]
+                      gvalue <- exp(A%*%param)/sigma
+                      gvalue <- pmin(1e5,pmax(0,gvalue))
+                      muL <- CL * hg1f1(rep(-.5, ng), rep(L, ng), -gvalue*gvalue/2)
+                      muL - sii/sigma
+                   }
+                    dkijac <- function(param, sii, sigma, A, L, CL){
+                      ng <- dim(A)[1]
+                      gvalue <- exp(A%*%param)/sigma
+                      gvalue <- pmin(1e5,pmax(0,gvalue))
+                      mgvsq <- -gvalue*gvalue/2
+                      muL <- CL * hg1f1(rep(-.5, ng), rep(L, ng), mgvsq)
+                      fv <- muL - sii/sigma
+                      attr(fv,"gradient") <- CL/2/L*diag(as.vector(hg1f1(rep(.5, ng), rep(L+1, ng), mgvsq)*gvalue/sigma*exp(A%*%param)))%*%A
+                      fv
+                    }
+                    w <- rep(1,dim(A)[1])
+                    } else {
               dkiModelQL <- function(param, si, sigma, A, L, CL){
                 ##
                 ##  Risk function for Diffusion Kurtosis model with
@@ -143,15 +167,28 @@ setMethod("dkiTensor", "dtiData",
                 ##   sigma should be of length ng here
                 #browser()
                 ng <- dim(A)[1]
-#                cat("param",signif(param,4),"value")
                 gvalue <- exp(A%*%param)/sigma
-#                cat("range",range(gvalue))
                 gvalue <- pmin(1e5,pmax(0,gvalue))
                 muL <- CL * hg1f1(rep(-.5, ng), rep(L, ng), -gvalue*gvalue/2)
-#                cat("krit:",sum((si/sigma - muL)^2),"\n")
                 sum((si/sigma - muL)^2)
               }
-
+              dkigradQL <- function(param, si, sigma, A, L, CL){
+                ##
+                ##  Risk function for Diffusion Kurtosis model with
+                ##  Gauss-approximation for noncentral chi
+                ##
+                ##   si are the original observations
+                ##   si/sigma is assumed to follow a noncentral chi_{2L} distribution
+                ##   sigma should be of length ng here
+                #browser()
+                ng <- dim(A)[1]
+                gvalue <- exp(A%*%param)/sigma
+                gvalue <- pmin(1e5,pmax(0,gvalue))
+                mgvsq <- -gvalue*gvalue/2
+                muL <- CL * hg1f1(rep(-.5, ng), rep(L, ng), mgvsq)
+                CL/2/L*as.vector((muL-si/sigma)*hg1f1(rep(.5, ng), rep(L+1, ng), mgvsq)*gvalue/sigma*exp(A%*%param))%*%A
+              }
+            }
               dim(D) <- c(6, ddim)
               dim(W) <- c(15, ddim)
 
@@ -164,14 +201,50 @@ setMethod("dkiTensor", "dtiData",
                       i <- i+1
                       ##  rescale for conditioning of gradient matrix
                       sii <- z$si[,i]/s0[ix,iy,iz]
+                      sigmai <- sigma[ix,iy,iz]/s0[ix,iy,iz]
                       param <- c(D[, ix, iy, iz], W[, ix, iy, iz])
                       param[1:6] <- param[c(1,4,6,2,3,5)] * mbv
                       param[7:21] <- param[7:21]*mean(param[1:3])^2
+                      if(opt[1]=="optim"){
                       param <- optim(param,
-                                     dkiModelQL, si = sii, sigma = sigma[ix, iy, iz]/s0[ix,iy,iz], A = A, L = L, CL = CL,
+                                     dkiModelQL, si = sii, sigma = sigmai, A = A, L = L, CL = CL,
                                      method="BFGS",
                                      control = list(reltol = 1e-6,
                                                     maxit = 100))$par
+                      }
+                      if(opt[1]=="optimx"){
+                        zz <- optimx(param,
+                                       dkiModelQL, si = sii, sigma = sigmai, A = A, L = L, CL = CL,
+                                       method="BFGS", itnmax=100,
+                                       control = list(reltol = 1e-6))
+                        param <- coef(zz)
+                      }
+                      if(opt[1]=="optimr"){
+                        zz <- optimr(param,
+                                       dkiModelQL, si = sii, sigma = sigmai, A = A, L = L, CL = CL,
+                                       method="BFGS",
+                                       control = list(reltol = 1e-6, maxit=100))
+                        param <- zz$par
+                      }
+                      if(opt[1]=="optimrg"){
+                        zz <- optimr(param,
+                                       dkiModelQL, dkigradQL, si = sii, sigma = sigmai, A = A, L = L, CL = CL,
+                                       method="BFGS",
+                                       control = list(reltol = 1e-6, maxit=1000))
+                        param <- zz$par
+                      }
+                      if(opt[1]=="optimParallel"){
+                        param <- optimParallel(param,
+                                       dkiModelQL, si = sii, sigma = sigmai, A = A, L = L, CL = CL,
+                                       method="BFGS",
+                                       control = list(factr = 1e6,
+                                                      maxit = 100))$par
+                      }
+                      if(opt[1]=="nlfb"){
+                        zz <- nlfb(param, dkifun, dkijac, weights=w, trace=verbose, sii=sii, A=A,
+                          sigma = sigmai, L = L, CL = CL)
+                        param <- zz$coefficients
+                      }
                       D[, ix, iy, iz] <- param[Dind] / mbv
                       W[, ix, iy, iz] <- param[7:21]/mean(param[1:3])^2
                     }
@@ -184,6 +257,21 @@ setMethod("dkiTensor", "dtiData",
 
             }
              if (method == "NLR") {
+               if(opt[1]=="optimParallel"){
+                  cl <- parallel::makeCluster(parallel::detectCores())
+                  parallel::setDefaultCluster(cl = cl)
+               }
+               if(opt[1]=="nlfb"){
+                  dkifun <- function(param, A, sii){
+                     exp(A%*%param)-sii
+                  }
+                  dkijac <- function(param, A, sii){
+                     fv <- exp(A%*%param)-sii
+                     attr(fv,"gradient") <- diag(as.vector(exp(A%*%param)))%*%A
+                     fv
+                  }
+                  w <- rep(1,dim(A)[1])
+               }
 
               xxx <- dkiDesign(object@gradient)
               bvalues <- object@bvalue/mbv
@@ -202,6 +290,14 @@ setMethod("dkiTensor", "dtiData",
                 gvalue <- exp(A%*%param[1:21])
                 sum((si - gvalue)^2)
               }
+              dkigrad <- function(param, si, A){
+                ##
+                ##  Risk function for Diffusion Kurtosis model with nonlinear regression
+                ##
+                ##   si are the original observations
+                gvalue <- exp(A%*%param[1:21])
+                2*as.vector((gvalue-si)*gvalue)%*%A
+              }
 
               dim(D) <- c(6, ddim)
               dim(W) <- c(15, ddim)
@@ -213,16 +309,49 @@ setMethod("dkiTensor", "dtiData",
                   for (ix in 1:ddim[1]) {
                     if (mask[ix, iy, iz]) {
                       i <- i+1
-                      sii <- object@si[ix,iy,iz,]/s0[ix, iy, iz]
+                      sii <- z$si[,i]/s0[ix, iy, iz]
                       param <- c(D[, ix, iy, iz], W[, ix, iy, iz])
                       param[1:6] <- param[c(1,4,6,2,3,5)] * mbv
                       param[7:21] <- param[7:21]*mean(param[1:3])^2
-
+                      if(opt[1]=="optim"){
                       param <- optim(param,
-                                     dkiModel, si = object@si[ix,iy,iz,], A = A,
+                                     dkiModel, si = sii, A = A,
                                      method="BFGS",
                                      control = list(reltol = 1e-6,
                                                     maxit = 100))$par
+                      }
+                      if(opt[1]=="optimx"){
+                        zz <- optimx(param,
+                                       dkiModel, si = sii, A = A,
+                                       method="BFGS", itnmax=100,
+                                       control = list(reltol = 1e-6))
+                        param <- coef(zz)
+                      }
+                      if(opt[1]=="optimr"){
+                        zz <- optimr(param,
+                                       dkiModel, si = sii, A = A,
+                                       method="BFGS",
+                                       control = list(reltol = 1e-6,maxit=100))
+                        param <- zz$par
+                      }
+                      if(opt[1]=="optimrg"){
+                        zz <- optimr(param,
+                                       dkiModel, dkigrad, si = sii, A = A,
+                                       method="BFGS",
+                                       control = list(reltol = 1e-6,maxit=1000))
+                        param <- zz$par
+                      }
+                      if(opt[1]=="optimParallel"){
+                        param <- optimParallel(param,
+                                       dkiModel, si = sii, A = A,
+                                       method="BFGS",
+                                       control = list(factr = 1e6,
+                                                      maxit = 100))$par
+                      }
+                      if(opt[1]=="nlfb"){
+                        zz <- nlfb(param, dkifun, dkijac, weights=w, trace=verbose, sii=sii, A=A)
+                        param <- zz$coefficients
+                      }
                       D[, ix, iy, iz] <- param[Dind] / mbv
                       W[, ix, iy, iz] <- param[7:21]/mean(param[1:3])^2
                     }

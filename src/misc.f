@@ -536,8 +536,8 @@ CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
             ezi=exp(zi/2)
             ai=b-a
             if(zi.lt.-1400) THEN
-               fz(i) = exp((-a)*log(-zi))*gofbai+5.6e-3+1.9e-3*b
-C   add +5.6e-3+1.9e-3*b to keep the function monotone
+               fz(i) = exp((-a)*log(-zi))*gofbai+5.64e-3+1.9e-3*b
+C   add +5.64e-3+1.9e-3*b to keep the function monotone
                CYCLE
             END IF
          ELSE

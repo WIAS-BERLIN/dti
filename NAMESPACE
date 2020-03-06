@@ -2,6 +2,10 @@ useDynLib(dti, .registration = TRUE, .fixes = "C_")
 
 #exportPattern("^[^\\.]")
 
+import("parallel")
+import("optimx")
+import("optimParallel")
+import("nlsr")
 importFrom("grDevices", "col2rgb", "dev.off", "grey", "heat.colors",
            "png", "rainbow", "rgb")
 importFrom("graphics", "plot", "axis", "contour", "identify", "legend",
