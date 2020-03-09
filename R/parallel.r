@@ -60,10 +60,13 @@ pdkiQP <- function(x,TA,Dmat,Amat){
   ##
   #require(quadprog)
   nvox <- dim(x)[2]
-  param <- matrix(0,21,nvox)
+  param <- matrix(0,22,nvox)
   for(i in 1:nvox){
     dvec <- -as.vector(t(TA) %*% x[,i])
-    resQPsolution <- quadprog::solve.QP(Dmat, dvec, Amat,factorized=FALSE)$solution
+    cterm <- sum(x[,i]^2)
+    resqp <- quadprog::solve.QP(Dmat, dvec, Amat,factorized=FALSE)
+    resQPsolution <- resqp$solution
+    param[22, i] <- cterm+2*resqp$value
     param[1:6, i] <- resQPsolution[1:6]
     param[7:21, i] <- resQPsolution[7:21] / mean(resQPsolution[1:3])^2
   }

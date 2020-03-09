@@ -43,9 +43,11 @@ setMethod("dkiTensor", "dtiData",
             ntotal <- prod(ddim)
             D <- array(0, dim=c(6, ntotal))
             W <- array(0, dim=c(15, ntotal))
+            sigma2 <- numeric(ntotal)
             bvalues <- object@bvalue[- s0ind]
             mbv <- max(bvalues)
             bvalues <- bvalues/mbv
+            df <- object@ngrad-21
 #            maxbv <- max(bvalues)
 
             Dind <- c(1, 4, 5, 2, 6, 3)
@@ -104,9 +106,12 @@ setMethod("dkiTensor", "dtiData",
                   mi <- maskind[i]
                   ## Tabesh Eq. [12]
                   Tabesh_B <- -ttt[,i]
+                  cterm <- sum(Tabesh_B)^2
                   ## QP solution
                   dvec <- as.vector(t(Tabesh_A) %*% Tabesh_B)
-                  resQPsolution <- quadprog::solve.QP(Dmat, dvec, Amat,factorized=FALSE)$solution
+                  resqp <- quadprog::solve.QP(Dmat, dvec, Amat,factorized=FALSE)
+                  resQPsolution <- resqp$solution
+                  sigma2[mi] <- cterm+2*resqp$value
                   D[, mi] <- resQPsolution[Dind] / mbv # re-order DT estimate to comply with dtiTensor
 
                   ## Tabesh Eq. [9]
@@ -117,7 +122,10 @@ setMethod("dkiTensor", "dtiData",
                 param <- plmatrix(ttt,pdkiQP,TA=Tabesh_A,Dmat=Dmat,Amat=Amat)
                 D[,mask] <- param[Dind ,] / mbv
                 W[,mask] <- param[7:21,]
+                sigma2[mask] <- param[22,]
               }
+              sigma2 <- sigma2/df
+              dim(sigma2) <- ddim
             }
 
 
@@ -194,6 +202,7 @@ setMethod("dkiTensor", "dtiData",
 
               if (verbose) pb <- txtProgressBar(min = 0, max = ddim[3], style = 3)
               i <- 0
+              dim(sigma2) <- ddim
               for (iz in 1:ddim[3]){
                 for (iy in 1:ddim[2]) {
                   for (ix in 1:ddim[1]) {
@@ -206,44 +215,50 @@ setMethod("dkiTensor", "dtiData",
                       param[1:6] <- param[c(1,4,6,2,3,5)] * mbv
                       param[7:21] <- param[7:21]*mean(param[1:3])^2
                       if(opt[1]=="optim"){
-                      param <- optim(param,
+                        optres <- optim(param,
                                      dkiModelQL, si = sii, sigma = sigmai, A = A, L = L, CL = CL,
                                      method="BFGS",
-                                     control = list(reltol = 1e-6,
-                                                    maxit = 100))$par
+                                     control = list(reltol = 1e-6, maxit = 1000))
+                         param <- optres$par
+                         sigma2[ix,iy,iz] <- optres$value*sigma[ix,iy,iz]^2/df
                       }
                       if(opt[1]=="optimx"){
-                        zz <- optimx(param,
+                        optres <- optimx(param,
                                        dkiModelQL, si = sii, sigma = sigmai, A = A, L = L, CL = CL,
-                                       method="BFGS", itnmax=100,
+                                       method="BFGS", itnmax=1000,
                                        control = list(reltol = 1e-6))
-                        param <- coef(zz)
+                        param <- coef(optres)
+                        sigma2[ix,iy,iz] <- optres$value*sigma[ix,iy,iz]^2/df
                       }
                       if(opt[1]=="optimr"){
-                        zz <- optimr(param,
+                        optres <- optimr(param,
                                        dkiModelQL, si = sii, sigma = sigmai, A = A, L = L, CL = CL,
                                        method="BFGS",
-                                       control = list(reltol = 1e-6, maxit=100))
-                        param <- zz$par
+                                       control = list(reltol = 1e-6, maxit=1000))
+                        param <- optres$par
+                        sigma2[ix,iy,iz] <- optres$value*sigma[ix,iy,iz]^2/df
                       }
                       if(opt[1]=="optimrg"){
-                        zz <- optimr(param,
+                        optres <- optimr(param,
                                        dkiModelQL, dkigradQL, si = sii, sigma = sigmai, A = A, L = L, CL = CL,
                                        method="BFGS",
                                        control = list(reltol = 1e-6, maxit=1000))
-                        param <- zz$par
+                        param <- optres$par
+                        sigma2[ix,iy,iz] <- optres$value*sigma[ix,iy,iz]^2/df
                       }
                       if(opt[1]=="optimParallel"){
-                        param <- optimParallel(param,
+                        optres <- optimParallel(param,
                                        dkiModelQL, si = sii, sigma = sigmai, A = A, L = L, CL = CL,
                                        method="BFGS",
-                                       control = list(factr = 1e6,
-                                                      maxit = 100))$par
+                                       control = list(factr = 1e6, maxit = 1000))
+                        param <- optres$par
+                        sigma2[ix,iy,iz] <- optres$value*sigma[ix,iy,iz]^2/df
                       }
                       if(opt[1]=="nlfb"){
-                        zz <- nlfb(param, dkifun, dkijac, weights=w, trace=verbose, sii=sii, A=A,
+                        optres <- nlfb(param, dkifun, dkijac, weights=w, trace=verbose, sii=sii, A=A,
                           sigma = sigmai, L = L, CL = CL)
-                        param <- zz$coefficients
+                        param <- optres$coefficients
+                        sigma2[ix,iy,iz] <- optres$ssquares*sigma[ix,iy,iz]^2/df
                       }
                       D[, ix, iy, iz] <- param[Dind] / mbv
                       W[, ix, iy, iz] <- param[7:21]/mean(param[1:3])^2
@@ -301,6 +316,7 @@ setMethod("dkiTensor", "dtiData",
 
               dim(D) <- c(6, ddim)
               dim(W) <- c(15, ddim)
+              dim(sigma2) <- ddim
 
               if (verbose) pb <- txtProgressBar(min = 0, max = ddim[3], style = 3)
               i <- 0
@@ -309,48 +325,55 @@ setMethod("dkiTensor", "dtiData",
                   for (ix in 1:ddim[1]) {
                     if (mask[ix, iy, iz]) {
                       i <- i+1
-                      sii <- z$si[,i]/s0[ix, iy, iz]
+                      s0i <- s0[ix, iy, iz]
+                      sii <- z$si[,i]/s0i
                       param <- c(D[, ix, iy, iz], W[, ix, iy, iz])
                       param[1:6] <- param[c(1,4,6,2,3,5)] * mbv
                       param[7:21] <- param[7:21]*mean(param[1:3])^2
                       if(opt[1]=="optim"){
-                      param <- optim(param,
+                      optres <- optim(param,
                                      dkiModel, si = sii, A = A,
                                      method="BFGS",
-                                     control = list(reltol = 1e-6,
-                                                    maxit = 100))$par
+                                     control = list(reltol = 1e-6, maxit = 1000))
+                      param <- optres$par
+                      sigma2[ix,iy,iz] <- optres$value*s0i^2/df
                       }
                       if(opt[1]=="optimx"){
-                        zz <- optimx(param,
+                        optres <- optimx(param,
                                        dkiModel, si = sii, A = A,
-                                       method="BFGS", itnmax=100,
+                                       method="BFGS", itnmax=1000,
                                        control = list(reltol = 1e-6))
-                        param <- coef(zz)
+                        param <- coef(optres)
+                        sigma2[ix,iy,iz] <- optres$value*s0i^2/df
                       }
                       if(opt[1]=="optimr"){
-                        zz <- optimr(param,
+                        optres <- optimr(param,
                                        dkiModel, si = sii, A = A,
                                        method="BFGS",
-                                       control = list(reltol = 1e-6,maxit=100))
-                        param <- zz$par
+                                       control = list(reltol = 1e-6,maxit=1000))
+                        param <- optres$par
+                        sigma2[ix,iy,iz] <- optres$value*s0i^2/df
                       }
                       if(opt[1]=="optimrg"){
-                        zz <- optimr(param,
+                        optres <- optimr(param,
                                        dkiModel, dkigrad, si = sii, A = A,
                                        method="BFGS",
                                        control = list(reltol = 1e-6,maxit=1000))
-                        param <- zz$par
+                        param <- optres$par
+                        sigma2[ix,iy,iz] <- optres$value*s0i^2/df
                       }
                       if(opt[1]=="optimParallel"){
-                        param <- optimParallel(param,
+                        optres <- optimParallel(param,
                                        dkiModel, si = sii, A = A,
                                        method="BFGS",
-                                       control = list(factr = 1e6,
-                                                      maxit = 100))$par
+                                       control = list(factr = 1e6, maxit = 1000))
+                        param <- optres$par
+                        sigma2[ix,iy,iz] <- optres$value*s0i^2/df
                       }
                       if(opt[1]=="nlfb"){
-                        zz <- nlfb(param, dkifun, dkijac, weights=w, trace=verbose, sii=sii, A=A)
-                        param <- zz$coefficients
+                        optres <- nlfb(param, dkifun, dkijac, weights=w, trace=verbose, sii=sii, A=A)
+                        param <- optres$coefficients
+                        sigma2[ix,iy,iz] <- optres$ssquares*s0i^2/df
                       }
                       D[, ix, iy, iz] <- param[Dind] / mbv
                       W[, ix, iy, iz] <- param[7:21]/mean(param[1:3])^2
@@ -538,7 +561,6 @@ setMethod("dkiTensor", "dtiData",
             if (verbose) cat("dkiTensor: finished estimation", format(Sys.time()), "\n")
 
             ## TODO: CHECK THESE!
-            sigma2 <- array(0, dim=ddim)
             scorr <- array(0, dim=c(3, 3, 3))
             bw <- c(0, 0, 0)
             index <- 1
