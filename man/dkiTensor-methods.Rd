@@ -13,7 +13,8 @@
  These methods estimate, in each voxel, the diffusion kurtosis tensor (and the diffusion tensor) and some scalar indices.
 }
 \usage{
-  \S4method{dkiTensor}{dtiData}(object, method=c("CLLS-QP", "CLLS-H", "ULLS", "QL", "NLR"),
+  \S4method{dkiTensor}{dtiData}(object, method=c("CLLS-QP", "CLLS-H", "ULLS", "QL", "NLR"), 
+                   opt = c("nlfb", "optimr",  "optim"),
                    sigma=NULL, L=1, mask=NULL,
                    mc.cores=setCores(, reprt=FALSE), verbose=FALSE)
   \S4method{dkiIndices}{dkiTensor}(object, mc.cores=setCores(, reprt=FALSE),
@@ -27,6 +28,7 @@ programm solution for the constrained optimization (requires package quadprog),
 or \code{"ULLS"} for an unconstrained linear least squares estimation. \code{"QL"} and
 \code{"NLR"} correspond to the use of unconstrained quasi-likelihood and nonlinear regression,
 respectively. }
+\item{opt}{Function to be used for optimization, \code{"nlfb"} refers to nonlinear regression function \code{nlfb} from package \pkg{nlsr}, \code{"optimr"} to optimization function \code{optimr} from package \pkg{optimx} and \code{optim} to the corresponding function from the base system. \code{"nlfb"} is supposed to be the fastest.}
 \item{sigma}{Scale parameter of intensity distribution (unprocessed). Used with \code{method="QL"}
    in the calculation of the expected intensity values.
 }
